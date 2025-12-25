@@ -99,6 +99,14 @@ const EngineOcean: React.FC = () => {
     setShowAudioSelector(false);
     setAudioStatus('LOADING');
     
+    // FAST TRACK: Pre-initialize and resume AudioContext immediately on user interaction
+    if (!audioCtxRef.current) {
+      audioCtxRef.current = new (window.AudioContext || (window as any).webkitAudioContext)({sampleRate: 24000});
+    }
+    if (audioCtxRef.current.state === 'suspended') {
+      await audioCtxRef.current.resume();
+    }
+    
     try {
       let textToRead = "";
       if (choice === 'HUMANIZED') {
@@ -111,7 +119,6 @@ const EngineOcean: React.FC = () => {
 
       const buffer = await generateSpeech(textToRead, selectedLanguage);
       if (buffer) {
-        if (!audioCtxRef.current) audioCtxRef.current = new (window.AudioContext || (window as any).webkitAudioContext)({sampleRate: 24000});
         const source = audioCtxRef.current.createBufferSource();
         source.buffer = buffer;
         source.playbackRate.value = playbackSpeed;
@@ -128,22 +135,170 @@ const EngineOcean: React.FC = () => {
     }
   };
 
+  const cleanText = (text: string) => {
+    return text
+      .replace(/[*#_~`>]/g, '') // Remove common markdown and special characters
+      .replace(/\s+/g, ' ') // Normalize whitespace to single spaces
+      .trim();
+  };
+
   const handleExportPDF = async () => {
     if (!result) return;
     setIsExporting(true);
+    
     try {
-      const doc = new jsPDF();
+      const doc = new jsPDF({
+        orientation: 'p',
+        unit: 'mm',
+        format: 'a4',
+        putOnlyUsedFonts: true
+      });
+
       const pageWidth = doc.internal.pageSize.getWidth();
+      const pageHeight = doc.internal.pageSize.getHeight();
       const margin = 20;
       const contentWidth = pageWidth - (margin * 2);
-      doc.setFillColor(5, 5, 5); doc.rect(0, 0, pageWidth, 50, 'F');
-      doc.setTextColor(255, 255, 255); doc.setFontSize(24); doc.text('CuriousMinds Ocean', margin, 30);
-      let currentY = 65;
-      doc.setTextColor(0, 0, 0); doc.setFontSize(14); doc.text(query.toUpperCase(), margin, currentY); currentY += 15;
-      doc.setFontSize(11); const rLines = doc.splitTextToSize(result.humanized, contentWidth);
-      doc.text(rLines, margin, currentY);
-      doc.save(`Ocean_${query.substring(0, 10)}.pdf`);
-    } catch (e) { alert("PDF Error."); } finally { setIsExporting(false); }
+      let currentY = 0;
+
+      const checkNewPage = (neededHeight: number) => {
+        if (currentY + neededHeight > pageHeight - margin) {
+          doc.addPage();
+          currentY = margin;
+          drawHeader();
+          return true;
+        }
+        return false;
+      };
+
+      const drawHeader = () => {
+        // Top dark bar
+        doc.setFillColor(8, 10, 15);
+        doc.rect(0, 0, pageWidth, 45, 'F');
+        
+        // Brand Name
+        doc.setTextColor(255, 255, 255);
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(26);
+        doc.text('CuriousMinds', margin, 20);
+        
+        // Product Subtitle
+        doc.setTextColor(34, 211, 238); // Cyan-400
+        doc.setFontSize(10);
+        doc.setFont('helvetica', 'normal');
+        doc.text('SYNTHESIS ENGINE // ENGINE OCEAN UPLINK', margin, 27);
+
+        // Metadata Badge
+        doc.setFillColor(255, 255, 255, 0.05);
+        doc.roundedRect(pageWidth - margin - 45, 13, 45, 18, 2, 2, 'F');
+        doc.setTextColor(255, 255, 255);
+        doc.setFontSize(8);
+        doc.text(`DATE: ${new Date().toLocaleDateString()}`, pageWidth - margin - 42, 19);
+        doc.text(`GRADE: ${grade}`, pageWidth - margin - 42, 25);
+        
+        currentY = 60;
+      };
+
+      const drawFooter = () => {
+        const pageCount = (doc.internal as any).getNumberOfPages();
+        for (let i = 1; i <= pageCount; i++) {
+          doc.setPage(i);
+          doc.setFontSize(8);
+          doc.setTextColor(150, 150, 150);
+          doc.text(`Page ${i} of ${pageCount}`, pageWidth / 2, pageHeight - 10, { align: 'center' });
+          doc.text('© 2025 CURIOUSMINDS INC. // PROPRIETARY COGNITIVE SYNTHESIS', margin, pageHeight - 10);
+        }
+      };
+
+      drawHeader();
+
+      // Title Section
+      doc.setTextColor(20, 20, 20);
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(18);
+      const titleLines = doc.splitTextToSize(query.toUpperCase(), contentWidth);
+      doc.text(titleLines, margin, currentY);
+      currentY += (titleLines.length * 8) + 12;
+
+      // Section: Humanized Briefing
+      doc.setTextColor(34, 211, 238);
+      doc.setFontSize(11);
+      doc.text('01. HUMANIZED BRIEFING', margin, currentY);
+      currentY += 6;
+      doc.setDrawColor(34, 211, 238);
+      doc.setLineWidth(0.5);
+      doc.line(margin, currentY, margin + 40, currentY);
+      currentY += 10;
+
+      doc.setTextColor(60, 60, 60);
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(10.5);
+      const briefingText = cleanText(result.humanized);
+      const briefingLines = doc.splitTextToSize(briefingText, contentWidth);
+      
+      briefingLines.forEach((line: string) => {
+        checkNewPage(6);
+        doc.text(line, margin, currentY);
+        currentY += 6;
+      });
+
+      // Section: Deep Dive (if exists)
+      if (result.deepDive) {
+        currentY += 15;
+        checkNewPage(40);
+        
+        doc.setTextColor(147, 51, 234); // Purple-600
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(11);
+        doc.text('02. NEXUS DEEP DIVE ANALYSIS', margin, currentY);
+        currentY += 6;
+        doc.setDrawColor(147, 51, 234);
+        doc.line(margin, currentY, margin + 55, currentY);
+        currentY += 10;
+
+        doc.setTextColor(80, 80, 80);
+        doc.setFont('helvetica', 'italic');
+        const deepDiveText = cleanText(result.deepDive);
+        const deepDiveLines = doc.splitTextToSize(deepDiveText, contentWidth);
+        
+        deepDiveLines.forEach((line: string) => {
+          checkNewPage(6);
+          doc.text(line, margin, currentY);
+          currentY += 6;
+        });
+      }
+
+      // Section: AI Engine Perspective
+      currentY += 15;
+      checkNewPage(40);
+      doc.setTextColor(150, 150, 150);
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(11);
+      doc.text('03. ENGINE PERSPECTIVE', margin, currentY);
+      currentY += 10;
+      
+      doc.setFillColor(248, 250, 252); // Light Slate background
+      const summaryText = cleanText(result.summary);
+      const summaryLines = doc.splitTextToSize(summaryText, contentWidth - 10);
+      doc.roundedRect(margin - 2, currentY - 5, contentWidth + 4, (summaryLines.length * 5) + 10, 2, 2, 'F');
+      
+      doc.setTextColor(100, 100, 100);
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(9);
+      summaryLines.forEach((line: string) => {
+        checkNewPage(5);
+        doc.text(line, margin + 2, currentY);
+        currentY += 5;
+      });
+
+      drawFooter();
+      
+      doc.save(`CuriousMinds_Ocean_Report_${query.replace(/\s+/g, '_').substring(0, 20)}.pdf`);
+    } catch (e) {
+      console.error(e);
+      alert("High-fidelity PDF generation failed. Network node error.");
+    } finally {
+      setIsExporting(false);
+    }
   };
 
   return (
@@ -212,7 +367,7 @@ const EngineOcean: React.FC = () => {
                 <div className="flex flex-wrap items-center justify-center gap-2 sm:gap-4 w-full xl:w-auto">
                   <div className="flex items-center gap-1.5 sm:gap-2 bg-white/5 px-3 py-2 rounded-lg sm:rounded-xl border border-white/10 shrink-0">
                     <Globe className="w-3.5 h-3.5 text-gray-500" />
-                    <select value={selectedLanguage} onChange={e => setSelectedLanguage(e.target.value)} className="bg-transparent text-[8px] sm:text-[10px] font-black uppercase text-white outline-none cursor-pointer">
+                    <select value={selectedLanguage} onChange={e => setSelectedLanguage(targetValue => targetValue)} className="bg-transparent text-[8px] sm:text-[10px] font-black uppercase text-white outline-none cursor-pointer">
                       {LANGUAGES.map(l => <option key={l.code} value={l.name} className="bg-black">{l.name}</option>)}
                     </select>
                   </div>
@@ -244,15 +399,15 @@ const EngineOcean: React.FC = () => {
                  <div className="space-y-3 sm:space-y-4">
                     <div className="flex items-center gap-2 text-[8px] sm:text-[10px] font-black uppercase text-cyan-400 tracking-widest bg-cyan-400/10 w-fit px-3 py-1.5 rounded-lg border border-cyan-400/20"><User className="w-3.5 h-3.5" /> Humanized Briefing</div>
                     <div className="prose prose-invert prose-sm sm:prose-lg max-w-none text-gray-200 bg-white/5 p-5 sm:p-12 rounded-[1.2rem] sm:rounded-[2.5rem] border border-white/5 leading-relaxed shadow-2xl font-light">
-                      {result.humanized.split('\n').map((line, i) => <p key={i} className="mb-4 sm:mb-6 last:mb-0">{line}</p>)}
+                      {cleanText(result.humanized).split('\n').map((line, i) => <p key={i} className="mb-4 sm:mb-6 last:mb-0">{line}</p>)}
                       
                       {result.deepDive && (
                         <div className="mt-8 sm:mt-12 pt-8 sm:pt-12 border-t border-white/10 animate-in fade-in slide-in-from-top-4">
                            <div className="flex items-center gap-2 sm:gap-3 mb-6 sm:mb-8 text-cyan-400 font-black uppercase text-[10px] sm:text-xs tracking-widest">
                              <Microscope className="w-4 h-4 sm:w-5 h-5" /> Nexus Deep Dive Analysis
                            </div>
-                           <div className="text-gray-400 text-sm sm:text-base leading-relaxed italic border-l-2 border-cyan-500/30 pl-4 sm:pl-8">
-                             {result.deepDive.split('\n').map((line, i) => <p key={i} className="mb-3 sm:mb-4">{line}</p>)}
+                           <div className="text-gray-400 text-sm sm:text-base leading-relaxed italic border-l-2 border-cyan-500/30 pl-4 sm:pl-8 whitespace-pre-wrap">
+                             {cleanText(result.deepDive)}
                            </div>
                         </div>
                       )}
@@ -262,7 +417,7 @@ const EngineOcean: React.FC = () => {
                  <div className="space-y-3 sm:space-y-4">
                     <div className="flex items-center gap-2 text-[8px] sm:text-[10px] font-black uppercase text-purple-400 tracking-widest bg-purple-400/10 w-fit px-3 py-1.5 rounded-lg border border-purple-400/20"><Bot className="w-3.5 h-3.5" /> Engine Perspective</div>
                     <div className="prose prose-invert prose-xs sm:prose-sm max-w-none text-gray-500 bg-purple-500/5 p-5 sm:p-8 rounded-[1.2rem] sm:rounded-[2rem] border border-purple-500/10 leading-relaxed italic">
-                      {result.summary}
+                      {cleanText(result.summary)}
                     </div>
                  </div>
               </div>

@@ -77,6 +77,7 @@ export const engineOceanQuery = async (query: string, grade: string, marks: stri
   const ai = getAI();
   const prompt = `Grade: ${grade}, Marks: ${marks}, Difficulty: ${difficulty}, Query: ${query}. 
   Depth Requirement: For ${marks} marks, output length must be precisely calibrated. 
+  STRICT RULES: NO MARKDOWN. NO SPECIAL CHARACTERS (*, #, _, -). JUST PLAIN CLEAN TEXT.
   1. HUMANIZED_RESULT: Comprehensive deep-dive briefing. 
   2. AI_SUMMARY: Meta-architectural view.
   Output in JSON. Use simple language appropriate for grade ${grade}.`;
@@ -116,7 +117,12 @@ export const deepDiveQuery = async (originalQuery: string, context: string): Pro
   const ai = getAI();
   const prompt = `Perform an extreme technical deep dive for: "${originalQuery}". 
   Context from previous synthesis: "${context.substring(0, 1000)}".
-  Goal: Explore edge cases and first principles. Eliminate all memory-based fluff. Be purely application-driven.`;
+  STRICT FORMATTING: 
+  1. NO MARKDOWN (no asterisks, no hashtags, no bold symbols).
+  2. NO SPECIAL CHARACTERS.
+  3. JUST PLAIN TEXT.
+  4. USE MULTIPLE NEWLINES TO CREATE SECTIONS.
+  5. Goal: Explore edge cases and first principles with extreme depth but concise phrasing. Eliminate all memory-based fluff. Be purely application-driven.`;
   
   try {
     const response = await ai.models.generateContent({
@@ -131,12 +137,8 @@ export const deepDiveQuery = async (originalQuery: string, context: string): Pro
 export const generateSpeech = async (text: string, targetLanguage: string = 'English'): Promise<AudioBuffer | null> => {
   const ai = getAI();
   try {
-    // Increased limit to 8000 to ensure "Full Synthesis" isn't cut off
-    const cleanText = text.replace(/[*#_~]/g, '').substring(0, 8000); 
-    const prompt = `CRITICAL: Read the ENTIRE text provided below without skipping or truncating any parts. 
-    Language: ${targetLanguage}. 
-    Tone Instruction: Adapt your emotional delivery dynamically. If the content is technical, be precise and sharp. If it is an encouraging briefing, be warm and inspiring. If it is a warning or intense quote, be authoritative and deep.
-    TEXT TO READ: ${cleanText}`;
+    const cleanText = text.replace(/[*#_~`]/g, '').substring(0, 8000); 
+    const prompt = `Directly speak this text in ${targetLanguage} with natural prosody. Do not skip content. TEXT: ${cleanText}`;
 
     const response = await ai.models.generateContent({
       model: SPEECH_MODEL,
@@ -151,6 +153,7 @@ export const generateSpeech = async (text: string, targetLanguage: string = 'Eng
 
     const base64Audio = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
     if (!base64Audio) return null;
+    
     const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)({sampleRate: 24000});
     return await decodeAudioData(decode(base64Audio), audioContext, 24000, 1);
   } catch (error) {
