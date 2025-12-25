@@ -1,0 +1,7 @@
+{
+  "name": "-final-admin corrected-Copy of completeCuriousMinds - Beyond Classrooms_upgraded-ind-embeded",
+  "description": "A 3D immersive landing page for a pre-seed EdTech startup focusing on real-world problem solving over memorization.",
+  "requestFramePermissions": [
+    "geolocation"
+  ]
+}
